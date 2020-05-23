@@ -32,29 +32,32 @@
 # STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import os
 import sys
 import time
-
-import os
 from time import sleep
-hardcoded_ip = 'ip:10.26.148.171'
-#hardcoded_ip = 'ip:localhost'
+
+hardcoded_ip = "ip:10.26.148.171"
+# hardcoded_ip = 'ip:localhost'
 my_ip = sys.argv[1] if len(sys.argv) >= 2 else hardcoded_ip
 print("Connecting with context at %s" % (my_ip))
 
 try:
     import adi
-    mydac = adi.ad5791(uri=my_ip) # REMEMBER TO VERIFY POWERDOWN/UP BEHAVIOR
+
+    mydac = adi.ad5791(uri=my_ip)  # REMEMBER TO VERIFY POWERDOWN/UP BEHAVIOR
 except:
-  print("No device found")
+    print("No device found")
 
 
 print("setting up DAC, setting output to 0.0V...")
-dac_scale = mydac.channel[0].scale # This is set by the device tree, it's not an actual measured value.
+dac_scale = mydac.channel[
+    0
+].scale  # This is set by the device tree, it's not an actual measured value.
 print("DAC scale factor: " + str(dac_scale))
-for i in range(0,6):
+for i in range(0, 6):
     print("setting DAC to %f volts" % (i * 0.4999))
-    mydac.channel[0].volts = (i * 0.4999)
+    mydac.channel[0].volts = i * 0.4999
     sleep(1.0)
 
 print("Done!")

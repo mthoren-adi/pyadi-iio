@@ -35,6 +35,7 @@ import numpy as np
 from adi.attribute import attribute
 from adi.context_manager import context_manager
 
+
 class ad5791(context_manager, attribute):
     """ AD5791 DAC """
 
@@ -131,7 +132,9 @@ class ad5791(context_manager, attribute):
 
         def to_raw(self, val):
             """Converts raw value to SI"""
-            return int((1000.0 * val / self.scale) * 2.0) # This is a hack - need to sort out offset in device tree overlay
+            return int(
+                (1000.0 * val / self.scale) * 2.0
+            )  # This is a hack - need to sort out offset in device tree overlay
 
         @property
         def volts(self):
