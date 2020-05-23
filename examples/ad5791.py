@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # Copyright (C) 2019 Analog Devices, Inc.
 #
 # All rights reserved.
@@ -31,41 +32,29 @@
 # STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from adi.ad936x import *
+import sys
+import time
 
-from adi.fmcomms5 import *
+import os
+from time import sleep
+hardcoded_ip = 'ip:10.26.148.171'
+#hardcoded_ip = 'ip:localhost'
+my_ip = sys.argv[1] if len(sys.argv) >= 2 else hardcoded_ip
+print("Connecting with context at %s" % (my_ip))
 
-from adi.ad9371 import *
+try:
+    import adi
+    mydac = adi.ad5791(uri=my_ip) # REMEMBER TO VERIFY POWERDOWN/UP BEHAVIOR
+except:
+  print("No device found")
 
-from adi.adrv9009 import *
 
-from adi.adrv9009_zu11eg import *
+print("setting up DAC, setting output to 0.0V...")
+dac_scale = mydac.channel[0].scale # This is set by the device tree, it's not an actual measured value.
+print("DAC scale factor: " + str(dac_scale))
+for i in range(0,6):
+    print("setting DAC to %f volts" % (i * 0.4999))
+    mydac.channel[0].volts = (i * 0.4999)
+    sleep(1.0)
 
-from adi.ad9680 import *
-
-from adi.ad9144 import *
-
-from adi.ad9152 import *
-
-from adi.daq2 import *
-
-from adi.daq3 import *
-
-from adi.adis16460 import *
-
-from adi.adis16507 import *
-
-from adi.ad7124 import *
-
-from adi.adxl345 import *
-
-from adi.fmclidar1 import *
-
-from adi.ad5686 import *
-
-from adi.ltc2983 import *
-
-from adi.ad5791 import *
-
-__version__ = "0.0.6"
-name = "Analog Devices Hardware Interfaces"
+print("Done!")
