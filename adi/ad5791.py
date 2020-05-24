@@ -41,7 +41,6 @@ class ad5791(context_manager, attribute):
 
     _complex_data = False
     channel = []  # type: ignore
-    _channel = "voltage0"
     _device_name = ""
     _rx_data_type = np.int32
 
@@ -68,12 +67,7 @@ class ad5791(context_manager, attribute):
                 else:
                     index += 1
 
-        for ch in self._ctrl.channels:
-            name = ch.id
-            self.channel.append(self._channel(self._ctrl, name))
-
-        # sort device channels after the index of their index
-        self.channel.sort(key=lambda x: int(x.name[7:]))
+        self.channel.append(self._channel(self._ctrl, "voltage0"))
 
     class _channel(attribute):
         """AD5791 channel"""

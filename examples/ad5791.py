@@ -49,11 +49,13 @@ try:
 except:
     print("No device found")
 
-
+print("Available power down modes:")
+print(mydac.channel[0].powerdown_mode_available)
+print("Current power down state: " + str(mydac.channel[0].powerdown))
+print("Powering up, just in case")
+mydac.channel[0].powerdown = 0  # Power up (Default state is powered down.)
 print("setting up DAC, setting output to 0.0V...")
-dac_scale = mydac.channel[
-    0
-].scale  # This is set by the device tree, it's not an actual measured value.
+dac_scale = mydac.channel[0].scale  # determined by regulators in device tree
 print("DAC scale factor: " + str(dac_scale))
 for i in range(0, 6):
     print("setting DAC to %f volts" % (i * 0.4999))
