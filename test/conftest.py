@@ -149,8 +149,12 @@ class BaseTestHelpers:
     def dev_interface(self, val, attr, tol):
         sdr = eval(self.classname + "(uri='" + self.uri + "')")
         # Check hardware
+        if not hasattr(sdr, attr):
+            raise AttributeError(attr + " not defined in " + self.classname)
         setattr(sdr, attr, val)
-        rval = float(getattr(sdr, attr))
+        rval = getattr(sdr, attr)
+        if not isinstance(rval, str):
+            rval = float(rval)
         del sdr
         if not isinstance(val, str):
             if abs(val - rval) > tol:
@@ -161,23 +165,86 @@ class BaseTestHelpers:
         else:
             return val == str(rval)
 
+    def iio_dev_interface(self, attrtype, dev_name, chan_name, inout, attr, val, tol):
+        sdr = iio.Context(self.uri)
+        attr_tl = attrtype.lower()
+
+        if attr_tl == "context":
+            ats = sdr.attrs
+            ats[attr].Value = str(val)
+            rval = float(sdr.attrs[attr].Value)
+        elif attr_tl == "debug":
+            raise Exception("Not supported")
+        elif attr_tl == "device":
+            dev = sdr.find_device(dev_name)
+            assert dev, "Device Not Found"
+            dev.attrs[attr].Value = str(val)
+            rval = float(dev.attrs[attr].Value)
+        elif attr_tl == "channel":
+            dev = sdr.find_device(dev_name)
+            assert dev, "Device Not Found"
+            chan = dev.find_channel(chan_name, inout)
+            assert chan, "Channel Not Found"
+            chan.attrs[attr].Value = str(val)
+            rval = float(chan.attrs[attr].Value)
+        else:
+            raise Exception("Device type unknown " + str(attrtype))
+
+        del sdr
+        if not isinstance(val, str):
+            if abs(val - rval) > tol:
+                print("Failed to set: " + attr)
+                print("Set: " + str(val))
+                print("Got: " + str(rval))
+            return abs(val - rval)
+        return val == str(rval)
+
 
 class BoardInterface(BaseTestHelpers):
-    def __init__(self, classname, devicename):
+    def __init__(self, classname=None, devicename=None):
         self.classname = classname
         self.devicename = devicename
         self.uri = ""
         self.check_skip()
 
 
-def attribute_single_value(classname, devicename, attr, start, stop, step, tol):
+def iio_attribute_single_value(
+    devicename,
+    attrtype,
+    dev_name,
+    chan_name,
+    inout,
+    attr,
+    start,
+    stop,
+    step,
+    tol,
+    repeats=1,
+):
+    bi = BoardInterface(None, devicename)
+    # Pick random number in operational range
+    numints = int((stop - start) / step)
+    for _ in range(repeats):
+        ind = random.randint(0, numints)
+        val = start + step * ind
+        # Check hardware
+        assert (
+            bi.iio_dev_interface(attrtype, dev_name, chan_name, inout, attr, val, tol)
+            <= tol
+        )
+
+
+def attribute_single_value(
+    classname, devicename, attr, start, stop, step, tol, repeats=1
+):
     bi = BoardInterface(classname, devicename)
     # Pick random number in operational range
     numints = int((stop - start) / step)
-    ind = random.randint(0, numints + 1)
-    val = start + step * ind
-    # Check hardware
-    assert bi.dev_interface(val, attr, tol) <= tol
+    for _ in range(repeats):
+        ind = random.randint(0, numints)
+        val = start + step * ind
+        # Check hardware
+        assert bi.dev_interface(val, attr, tol) <= tol
 
 
 def attribute_single_value_str(classname, devicename, attr, val, tol):
@@ -186,16 +253,56 @@ def attribute_single_value_str(classname, devicename, attr, val, tol):
     assert bi.dev_interface(str(val), attr, tol) <= tol
 
 
-def attribute_single_value_pow2(classname, devicename, attr, max_pow, tol):
+def attribute_single_value_pow2(classname, devicename, attr, max_pow, tol, repeats=1):
     bi = BoardInterface(classname, devicename)
     # Pick random number in operational range
     nums = []
     for k in range(0, max_pow):
         nums.append(2 ** k)
-    ind = random.randint(0, len(nums) - 1)
-    val = nums[ind]
-    # Check hardware
-    assert bi.dev_interface(val, attr, tol) <= tol
+    for _ in range(repeats):
+        ind = random.randint(0, len(nums) - 1)
+        val = nums[ind]
+        # Check hardware
+        assert bi.dev_interface(val, attr, tol) <= tol
+
+
+def attribute_multipe_values(classname, devicename, attr, values, tol, repeats=1):
+    bi = BoardInterface(classname, devicename)
+    for _ in range(repeats):
+        for val in values:
+            if isinstance(val, str):
+                assert bi.dev_interface(val, attr, 0)
+            else:
+                assert bi.dev_interface(val, attr, tol) <= tol
+
+
+def attribute_multipe_values_with_depends(
+    classname, devicename, attr, depends, values, tol, repeats=1
+):
+    bi = BoardInterface(classname, devicename)
+    # Set custom dependencies for the attr being tested
+    for p in depends.keys():
+        if isinstance(depends[p], str):
+            assert bi.dev_interface(depends[p], p, 0)
+        else:
+            assert bi.dev_interface(depends[p], p, tol) <= tol
+    for _ in range(repeats):
+        for val in values:
+            if isinstance(val, str):
+                assert bi.dev_interface(val, attr, 0)
+            else:
+                assert bi.dev_interface(val, attr, tol) <= tol
+
+
+def attribute_write_only_str(classname, devicename, attr, file):
+    bi = BoardInterface(classname, devicename)
+    sdr = eval(bi.classname + "(uri='" + bi.uri + "')")
+    try:
+        setattr(sdr, attr, file)
+        del sdr
+    except Exception as e:
+        del sdr
+        raise Exception(e)
 
 
 def dma_rx(classname, devicename, channel):
@@ -361,8 +468,14 @@ def cw_loopback(classname, devicename, channel, param_set):
     # Create a sinewave waveform
     if hasattr(sdr, "sample_rate"):
         RXFS = int(sdr.sample_rate)
-    else:
+    elif hasattr(sdr, "rx_sample_rate"):
         RXFS = int(sdr.rx_sample_rate)
+    else:
+        """ no sample_rate nor rx_sample_rate. Let's try something like
+        rx($channel)_sample_rate"""
+        attr = "rx" + str(channel) + "_sample_rate"
+        RXFS = int(getattr(sdr, attr))
+
     A = 2 ** 15
     fc = RXFS * 0.1
     ts = 1 / float(RXFS)
@@ -548,6 +661,120 @@ def cyclic_buffer_exception(classname, devicename, channel, param_set):
         pytest.fail(msg)
 
 
+#########################################
+
+
+def stress_context_creation(classname, devicename, channel, repeats):
+    """ Repeatedly create and destroy a context """
+    for _ in range(repeats):
+        bi = BoardInterface(classname, devicename)
+        sdr = eval(bi.classname + "(uri='" + bi.uri + "')")
+        N = 2 ** 15
+        if not isinstance(channel, list):
+            sdr.rx_enabled_channels = [channel]
+        else:
+            sdr.rx_enabled_channels = channel
+        sdr.rx_buffer_size = N * len(sdr.rx_enabled_channels)
+        try:
+            for _ in range(repeats):
+                data = sdr.rx()
+                if isinstance(data, list):
+                    for chan in data:
+                        assert np.sum(np.abs(chan)) > 0
+                else:
+                    assert np.sum(np.abs(data)) > 0
+                sdr.rx_destroy_buffer()
+        except Exception as e:
+            del sdr
+            raise Exception(e)
+
+        del sdr
+
+
+def stress_rx_buffer_length(classname, devicename, channel, buffer_sizes):
+    """ Repeatedly create and destroy buffers across different buffer sizes"""
+    bi = BoardInterface(classname, devicename)
+    sdr = eval(bi.classname + "(uri='" + bi.uri + "')")
+    if not isinstance(channel, list):
+        sdr.rx_enabled_channels = [channel]
+    else:
+        sdr.rx_enabled_channels = channel
+    try:
+        for size in buffer_sizes:
+            sdr.rx_buffer_size = size
+            data = sdr.rx()
+            if isinstance(data, list):
+                for chan in data:
+                    assert len(chan) == size
+                    assert np.sum(np.abs(chan)) > 0
+            else:
+                assert len(data) == size
+                assert np.sum(np.abs(data)) > 0
+            sdr.rx_destroy_buffer()
+    except Exception as e:
+        del sdr
+        raise Exception(e)
+
+    del sdr
+
+
+def stress_rx_buffer_creation(classname, devicename, channel, repeats):
+    """ Repeatedly create and destroy buffers """
+    bi = BoardInterface(classname, devicename)
+    sdr = eval(bi.classname + "(uri='" + bi.uri + "')")
+    N = 2 ** 15
+    if not isinstance(channel, list):
+        sdr.rx_enabled_channels = [channel]
+    else:
+        sdr.rx_enabled_channels = channel
+    sdr.rx_buffer_size = N * len(sdr.rx_enabled_channels)
+    try:
+        for _ in range(repeats):
+            data = sdr.rx()
+            if isinstance(data, list):
+                for chan in data:
+                    assert np.sum(np.abs(chan)) > 0
+            else:
+                assert np.sum(np.abs(data)) > 0
+            sdr.rx_destroy_buffer()
+    except Exception as e:
+        del sdr
+        raise Exception(e)
+
+    del sdr
+
+
+def stress_tx_buffer_creation(classname, devicename, channel, repeats):
+    bi = BoardInterface(classname, devicename)
+    sdr = eval(bi.classname + "(uri='" + bi.uri + "')")
+    TXFS = 1000
+    N = 2 ** 15
+    ts = 1 / float(TXFS)
+    t = np.arange(0, N * ts, ts)
+    fc = 10000
+    d = np.cos(2 * np.pi * t * fc) * 2 ** 15 * 0.5
+
+    if not isinstance(channel, list):
+        sdr.tx_enabled_channels = [channel]
+    else:
+        sdr.tx_enabled_channels = channel
+        d = [d] * len(channel)
+    sdr.tx_buffer_size = N * len(sdr.tx_enabled_channels)
+
+    try:
+        for _ in range(repeats):
+            sdr.tx(d)
+            sdr.tx_destroy_buffer()
+    except Exception as e:
+        del sdr
+        raise Exception(e)
+
+    del sdr
+
+
+#########################################
+
+
 def command_line_config(request):
     if request.config.getoption("--error_on_filter"):
         global ignore_skip
@@ -565,6 +792,36 @@ def command_line_config(request):
 
 #########################################
 # Fixtures
+@pytest.fixture()
+def test_iio_attribute_single_value(request):
+    command_line_config(request)
+    yield iio_attribute_single_value
+
+
+@pytest.fixture()
+def test_stress_context_creation(request):
+    command_line_config(request)
+    yield stress_context_creation
+
+
+@pytest.fixture()
+def test_stress_rx_buffer_length(request):
+    command_line_config(request)
+    yield stress_rx_buffer_length
+
+
+@pytest.fixture()
+def test_stress_rx_buffer_creation(request):
+    command_line_config(request)
+    yield stress_rx_buffer_creation
+
+
+@pytest.fixture()
+def test_stress_tx_buffer_creation(request):
+    command_line_config(request)
+    yield stress_tx_buffer_creation
+
+
 @pytest.fixture()
 def test_attribute_single_value(request):
     command_line_config(request)
@@ -641,3 +898,21 @@ def test_cw_loopback(request):
 def test_gain_check(request):
     command_line_config(request)
     yield gain_check
+
+
+@pytest.fixture()
+def test_attribute_multipe_values(request):
+    command_line_config(request)
+    yield attribute_multipe_values
+
+
+@pytest.fixture()
+def test_attribute_multipe_values_with_depends(request):
+    command_line_config(request)
+    yield attribute_multipe_values_with_depends
+
+
+@pytest.fixture
+def test_attribute_write_only_str(request):
+    command_line_config(request)
+    yield attribute_write_only_str
